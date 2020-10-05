@@ -1,0 +1,11 @@
+[package]
+name = "nani-the-facc"
+version = "0.1.0"
+authors = ["Ngo Iok Ui <wusyong9104@gmail.com>"]
+edition = "2018"
+description = "Small C compiler with commits to demenstrate step by step."
+license = "Apache-2.0 OR MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
