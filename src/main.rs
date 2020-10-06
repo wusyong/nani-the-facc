@@ -1,11 +1,71 @@
 use std::{env, process};
 
-use nom::{character::complete::digit0, IResult};
+use nom::{
+    branch::alt,
+    character::complete::{char as char1, digit1},
+    IResult,
+};
+
+/// Token kind
+enum TokenKind {
+    /// Keywords or punctuators
+    RESERVED(char),
+    /// Numeric literals
+    NUM(isize),
+    /// End-of-file markers
+    EOF,
+}
+
+/// Token type
+struct Token {
+    kind: TokenKind,
+    pos: usize,
+}
+
+impl Token {
+    pub fn new(kind: TokenKind, pos: usize) -> Self {
+        Token { kind, pos }
+    }
+}
+
+fn tokenize(p: &str) -> IResult<&str, Vec<Token>> {
+    let s = p;
+    let mut pos = 0;
+    let mut p = p;
+    let mut tokens = Vec::new();
+    while !p.is_empty() {
+        if let Ok((remaining, num)) = parse_number(p) {
+            tokens.push(Token::new(TokenKind::NUM(num), pos));
+            pos += p.len() - remaining.len();
+            p = remaining;
+        } else if let Ok((remaining, pun)) = parse_punctuators(p) {
+            tokens.push(Token::new(TokenKind::RESERVED(pun), pos));
+            pos += p.len() - remaining.len();
+            p = remaining;
+        } else {
+            exit_with_stderr(s, pos, "Invalid token");
+        }
+    }
+
+    tokens.push(Token::new(TokenKind::EOF, pos));
+    Ok((p, tokens))
+}
 
 fn parse_number(input: &str) -> IResult<&str, isize> {
-    let pair = digit0(input)?;
+    let pair = digit1(input)?;
     let digit = pair.1.parse::<isize>().unwrap_or_default();
     Ok((pair.0, digit))
+}
+
+fn parse_punctuators(input: &str) -> IResult<&str, char> {
+    alt((char1('+'), char1('-')))(input)
+}
+
+fn exit_with_stderr(s: &str, pos: usize, msg: &str) {
+    eprintln!("{}", s);
+    (0..pos).into_iter().for_each(|_| eprint!(" "));
+    eprintln!("^ {}", msg);
+    process::exit(1);
 }
 
 fn main() {
@@ -19,25 +79,38 @@ fn main() {
     }
 
     let p = args.nth(1).unwrap();
+    let tokens = tokenize(&p).expect("Fail to create tokens");
+    let mut tokens = tokens.1.iter();
     println!("  .globl main");
     println!("main:");
-    let mut p = parse_number(p.as_str()).expect("Fail to parse number");
-    println!("  mov ${}, %rax", p.1);
+    let first = tokens.next().expect("No token created.");
+    let num = match first.kind {
+        TokenKind::NUM(n) => n,
+        _ => 0,
+    };
+    println!("  mov ${}, %rax", num);
 
-    while !p.0.is_empty() {
-        let mut chars = p.0.chars();
-        match chars.next() {
-            Some('+') => {
-                p = parse_number(chars.as_str()).expect("Fail to parse number");
-                println!("  add ${}, %rax", p.1);
+    while let Some(Token {
+        kind: TokenKind::RESERVED(op),
+        pos,
+    }) = tokens.next()
+    {
+        if *op == '+' {
+            match tokens.next() {
+                Some(Token {
+                    kind: TokenKind::NUM(num),
+                    pos: _,
+                }) => println!("  add ${}, %rax", *num),
+                _ => exit_with_stderr(&p, *pos + 1, "Expect a number"),
             }
-            Some('-') => {
-                p = parse_number(chars.as_str()).expect("Fail to parse number");
-                println!("  sub ${}, %rax", p.1);
-            }
-            c => {
-                eprintln!("unexpected character: {:?}", c);
-                process::exit(1);
+        }
+        if *op == '-' {
+            match tokens.next() {
+                Some(Token {
+                    kind: TokenKind::NUM(num),
+                    pos: _,
+                }) => println!("  sub ${}, %rax", *num),
+                _ => exit_with_stderr(&p, *pos + 1, "Expect a number"),
             }
         }
     }
